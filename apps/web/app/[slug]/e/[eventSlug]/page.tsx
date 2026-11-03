@@ -13,6 +13,7 @@ import {
   type Event,
   type EventDraftPreview,
   type PublicReference,
+  type User,
   formatEventDateRange,
   formatSpotsRemaining,
 } from "@/lib/api";
@@ -95,7 +96,13 @@ export default async function EventLandingPage({ params }: Props) {
   const event = await fetchEvent(slug, eventSlug);
   if (!event) notFound();
   if (isDraftPreview(event)) {
-    return <DraftPreviewPage preview={event} />;
+    // Auth check jen pro draft preview — na publishnutém eventu
+    // auth-aware CTA už řeší `my_rsvp` payload. Draft preview je
+    // server-rendered, takže potřebujeme znát auth stav předem,
+    // ať nenabízíme „Vytvořit účet / Přihlásit se" už přihlášenému
+    // viewerovi (feedback 2026-11-03).
+    const viewer = await serverFetch<User>("/api/auth/me/");
+    return <DraftPreviewPage preview={event} isAuthenticated={viewer !== null} />;
   }
   // Event slug alias: pokud přišel starý slug (backend hit přes
   // EventSlugAlias → vrací event s canonical `event.slug`), pošleme
@@ -308,7 +315,13 @@ export default async function EventLandingPage({ params }: Props) {
   );
 }
 
-function DraftPreviewPage({ preview }: { preview: EventDraftPreview }) {
+function DraftPreviewPage({
+  preview,
+  isAuthenticated,
+}: {
+  preview: EventDraftPreview;
+  isAuthenticated: boolean;
+}) {
   const logo = assetUrl(preview.workspace_logo_url);
   return (
     <div data-theme="paper" className="flex min-h-screen flex-col bg-canvas text-ink-900">
@@ -342,9 +355,9 @@ function DraftPreviewPage({ preview }: { preview: EventDraftPreview }) {
             {preview.title}
           </h1>
           <p className="mt-4 text-ink-700">
-            Pořadatel akci ještě připravuje, takže veřejná stránka zatím
-            není dostupná. Mrkni za chvíli — jakmile to spustí, najdeš tu
-            program, cenu i registraci.
+            Pořadatel akci ještě připravuje — stránka ještě není publikovaná
+            a registrace zatím není otevřená. Mrkni za chvíli, jakmile to
+            spustí, najdeš tu program, cenu i přihlašování.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -354,21 +367,30 @@ function DraftPreviewPage({ preview }: { preview: EventDraftPreview }) {
             >
               Profil pořadatele
             </Link>
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-hover focus-ring"
-            >
-              Vytvořit účet
-            </Link>
+            {/* Signup CTA + „už účet máš? přihlásit se" ukazujeme JEN
+                anonymnímu viewerovi. Přihlášený uživatel na draft preview
+                neměl co dělat s „Vytvořit účet / Přihlásit se" — mátlo to
+                (feedback 2026-11-03: user viděl avatar v headeru i nabídku
+                „Přihlásit se" ve stejném viewportu). */}
+            {!isAuthenticated && (
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-hover focus-ring"
+              >
+                Vytvořit účet
+              </Link>
+            )}
           </div>
 
-          <p className="mt-6 text-xs text-ink-500">
-            Už účet máš?{" "}
-            <Link href="/login" className="font-medium text-ink-700 underline hover:text-ink-900">
-              Přihlásit se
-            </Link>
-            .
-          </p>
+          {!isAuthenticated && (
+            <p className="mt-6 text-xs text-ink-500">
+              Už účet máš?{" "}
+              <Link href="/login" className="font-medium text-ink-700 underline hover:text-ink-900">
+                Přihlásit se
+              </Link>
+              .
+            </p>
+          )}
         </div>
       </main>
 
